@@ -1,23 +1,29 @@
-const fs = require("fs");
-const PdfReader = require('pdfreader').PdfReader;
+const fs = require("fs")
+const { writeFileSync } = require('fs')
+const PdfReader = require('pdfreader').PdfReader
+const ics = require('ics')
 
+const uppercaseRegex = /^[A-Z]{2}/
 const dateRegex = /^\d{2}.\d{2}.\d{2}/
-const pdfFile = "tg-january.pdf"//"tg-february.pdf" tg-january.pdf
-const program = []
 const itemRegex = [
   /^\d{2}:\d{2}$/,
   /•/,
   /^\(\d{1} min./,
-  /^Awit \d{1,3} -/
+  /^Awit \d{1,3} -/,
+  /^Pambungad na Komento$/,
+  /^Student/,
+  /^Conductor/
 ]
 
 let meeting = {}
-const MEETING_CBS = "Pag-aaral ng Kongregasyon sa Bibliya"
 const MEETING_MIDWEEK = "Buhay at Ministeryong Kristiyano"
 
+if(!process.argv[2])
+  return "PDF file name param is missing"
+const pdfFile = process.argv[2]
+const calendarFile = pdfFile.substring(0, pdfFile.indexOf('.')) + ".ics"
+
 fs.readFile(pdfFile, (err, pdfBuffer) => {
-  let day = {}
-  let item = {}
   let program = []
 
   new PdfReader().parseBuffer(pdfBuffer, function(err, cell){
@@ -26,7 +32,7 @@ fs.readFile(pdfFile, (err, pdfBuffer) => {
     } else if (!cell) {
       if(meeting.rows)
         program.push(meeting)
-      console.log(program)
+      createCalendarExport(program)
     } else if (cell.text) {
 
       let text = cell.text.trim()
@@ -42,13 +48,37 @@ fs.readFile(pdfFile, (err, pdfBuffer) => {
    })
 });
 
-function createCalendarExport(program) {
+function shorten(str, maxLen = 26, separator = ' ') {
+  if (str.length <= maxLen)
+    return str
+  return str.substr(0, maxLen) + "..."
+}
+
+function createCalendarEvents(program) {
   const events = []
 
   program.forEach(meeting => {
     let date = meeting.date
+    let title = meeting.title || meeting.rows[0]
+    let duration = {}
+
+    if (meeting.rows.length > 3) {
+      duration = {
+        minutes: 105
+      }
+      date.setHours(19)
+      date.setMinutes(0)
+    } else {
+      duration = {
+        minutes: 30
+      }
+      date.setHours(20)
+      date.setMinutes(5)
+    }
+
     events.push({
-      title: 'Lunch',
+      title: title,
+      description: convertDescription(meeting.rows),
       start: [
         date.getFullYear(),
         date.getMonth() + 1,
@@ -56,16 +86,45 @@ function createCalendarExport(program) {
         date.getHours(),
         date.getMinutes()
       ],
-      duration: { minutes: 45 }
+      duration: duration
     })
   })
 
-  /*
-  {
-    title: 'Lunch',
-    start: [2020, 1, 15, 12, 15],
-    duration: { minutes: 45 }
-  }*/
+  return events
+}
+
+function convertDescription(rows) {
+  let result = ""
+  let secondRow = 0
+  for (let counter = 0; counter < rows.length; counter++) {
+    let row = rows[counter]
+
+    if(row.match(uppercaseRegex))
+      result += "---"
+    else {
+      if((secondRow%2) == 0)
+        result += "• "
+      result += shorten(row)
+      secondRow++
+    }
+
+
+
+    result += "\n"
+  }
+  return result
+}
+
+function createCalendarExport(program) {
+
+  const events = createCalendarEvents(program)
+  const { error, value } = ics.createEvents(events)
+
+  if (error) {
+    console.log(error)
+    return
+  }
+  writeFileSync(`${__dirname}/${calendarFile}`, value)
 }
 
 function createMetting(dateText) {
@@ -90,13 +149,12 @@ function createMetting(dateText) {
   let meetingType = ""
   if(date.getDay() === TUESDAY)
     meetingType = MEETING_MIDWEEK
-  else if (date.getDay() === SUNDAY)
-    meetingType = MEETING_CBS
   else
     meetingType = undefined
 
   return {
     date: date,
+    duration: 0,
     type: meetingType,
     title: title,
     rows: []

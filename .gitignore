@@ -1,0 +1,4 @@
+*.pdf
+*.ics
+/node_modules
+/.idea
