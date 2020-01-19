@@ -10,6 +10,7 @@ const itemRegex = [
   /•/,
   /^\(\d{1} min./,
   /^Awit \d{1,3} -/,
+  /”$/,
   /^Pambungad na Komento$/,
   /^Student/,
   /^Conductor/
@@ -41,6 +42,7 @@ fs.readFile(pdfFile, (err, pdfBuffer) => {
         if(meeting.rows)
           program.push(meeting)
         meeting = createMetting(text)
+        console.log(meeting.date)
       } else if (meeting.rows &&  !itemRegex.some(rx => rx.test(text))) {
         meeting.rows.push(text)
       }
